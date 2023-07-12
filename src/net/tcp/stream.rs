@@ -63,9 +63,15 @@ impl TcpStream {
 
         let (pair, rx) = World::current(|world| {
             let dst = addr.to_socket_addr(&world.dns);
-
             let host = world.current_host_mut();
-            let mut local_addr = SocketAddr::new(host.addr, host.assign_ephemeral_port());
+
+            let host_addr = if dst.is_ipv4() {
+                host.addrs.ipv4.into()
+            } else {
+                host.addrs.ipv6.into()
+            };
+            let mut local_addr = SocketAddr::new(host_addr, host.assign_ephemeral_port());
+
             if dst.ip().is_loopback() {
                 local_addr.set_ip(dst.ip());
             }
@@ -282,9 +288,11 @@ fn send_loopback(src: SocketAddr, dst: SocketAddr, message: Protocol) {
     tokio::spawn(async move {
         sleep(Duration::from_micros(1)).await;
         World::current(|world| {
-            if let Err(rst) = world
-                .current_host_mut()
-                .receive_from_network(Envelope { src, dst, message }) {
+            if let Err(rst) =
+                world
+                    .current_host_mut()
+                    .receive_from_network(Envelope { src, dst, message })
+            {
                 _ = world.current_host_mut().receive_from_network(Envelope {
                     src: dst,
                     dst: src,

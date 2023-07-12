@@ -91,7 +91,7 @@ use config::Config;
 
 mod dns;
 use dns::Dns;
-pub use dns::{ToIpAddr, ToIpAddrs, ToSocketAddrs};
+pub use dns::{ToIpAddrs, ToSocketAddrs};
 
 mod envelope;
 use envelope::Envelope;
@@ -140,15 +140,8 @@ pub(crate) fn for_pairs(a: &Vec<IpAddr>, b: &Vec<IpAddr>, mut f: impl FnMut(IpAd
 /// Lookup an IP address by host name.
 ///
 /// Must be called from within a Turmoil simulation.
-pub fn lookup(addr: impl ToIpAddr) -> IpAddr {
+pub fn lookup(addr: impl ToIpAddrs) -> Vec<IpAddr> {
     World::current(|world| world.lookup(addr))
-}
-
-/// Lookup an IP address by host name. Use regex to match a number of hosts.
-///
-/// Must be called from within a Turmoil simulation.
-pub fn lookup_many(addr: impl ToIpAddrs) -> Vec<IpAddr> {
-    World::current(|world| world.lookup_many(addr))
 }
 
 /// Hold messages between two hosts, or sets of hosts, until [`release`] is
@@ -157,11 +150,13 @@ pub fn lookup_many(addr: impl ToIpAddrs) -> Vec<IpAddr> {
 /// Must be called from within a Turmoil simulation.
 pub fn hold(a: impl ToIpAddrs, b: impl ToIpAddrs) {
     World::current(|world| {
-        let a = world.lookup_many(a);
-        let b = world.lookup_many(b);
+        let a = world.lookup(a);
+        let b = world.lookup(b);
 
         for_pairs(&a, &b, |a, b| {
-            world.hold(a, b);
+            if a.is_ipv4() == b.is_ipv4() {
+                world.hold(a, b);
+            }
         });
     })
 }
@@ -171,11 +166,13 @@ pub fn hold(a: impl ToIpAddrs, b: impl ToIpAddrs) {
 /// Must be called from within a Turmoil simulation.
 pub fn release(a: impl ToIpAddrs, b: impl ToIpAddrs) {
     World::current(|world| {
-        let a = world.lookup_many(a);
-        let b = world.lookup_many(b);
+        let a = world.lookup(a);
+        let b = world.lookup(b);
 
         for_pairs(&a, &b, |a, b| {
-            world.release(a, b);
+            if a.is_ipv4() == b.is_ipv4() {
+                world.release(a, b);
+            }
         });
     })
 }
@@ -186,11 +183,13 @@ pub fn release(a: impl ToIpAddrs, b: impl ToIpAddrs) {
 /// Must be called from within a Turmoil simulation.
 pub fn partition(a: impl ToIpAddrs, b: impl ToIpAddrs) {
     World::current(|world| {
-        let a = world.lookup_many(a);
-        let b = world.lookup_many(b);
+        let a = world.lookup(a);
+        let b = world.lookup(b);
 
         for_pairs(&a, &b, |a, b| {
-            world.partition(a, b);
+            if a.is_ipv4() == b.is_ipv4() {
+                world.partition(a, b);
+            }
         });
     })
 }
@@ -201,11 +200,13 @@ pub fn partition(a: impl ToIpAddrs, b: impl ToIpAddrs) {
 /// Must be called from within a Turmoil simulation.
 pub fn repair(a: impl ToIpAddrs, b: impl ToIpAddrs) {
     World::current(|world| {
-        let a = world.lookup_many(a);
-        let b = world.lookup_many(b);
+        let a = world.lookup(a);
+        let b = world.lookup(b);
 
         for_pairs(&a, &b, |a, b| {
-            world.repair(a, b);
+            if a.is_ipv4() == b.is_ipv4() {
+                world.repair(a, b);
+            }
         });
     })
 }

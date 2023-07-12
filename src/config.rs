@@ -20,7 +20,7 @@ pub(crate) struct Config {
 }
 
 /// Configures link behavior.
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct Link {
     /// Message latency between two hosts
     pub(crate) latency: Option<Latency>,
@@ -30,7 +30,7 @@ pub(crate) struct Link {
 }
 
 /// Configure latency behavior between two hosts.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct Latency {
     /// Minimum latency
     pub(crate) min_message_latency: Duration,
@@ -43,7 +43,7 @@ pub(crate) struct Latency {
 }
 
 /// Configure how often messages are lost
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct MessageLoss {
     /// Probability of a link failing
     pub(crate) fail_rate: f64,

@@ -39,10 +39,6 @@ impl TcpListener {
                 panic!("{addr} is not supported");
             }
 
-            if addr.is_ipv4() != host.addr.is_ipv4() {
-                panic!("ip version mismatch: {:?} host: {:?}", addr, host.addr)
-            }
-
             if addr.port() == 0 {
                 addr.set_port(host.assign_ephemeral_port());
             }
@@ -78,7 +74,11 @@ impl TcpListener {
                     my_addr.set_ip(origin.ip());
                 }
                 if my_addr.ip().is_unspecified() {
-                    my_addr.set_ip(host.addr);
+                    my_addr.set_ip(if self.local_addr.is_ipv4() {
+                        host.addrs.ipv4.into()
+                    } else {
+                        host.addrs.ipv6.into()
+                    });
                 }
 
                 let pair = SocketPair::new(my_addr, origin);

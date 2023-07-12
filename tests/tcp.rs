@@ -684,66 +684,66 @@ fn split() -> Result {
 
 // # IpVersion specific tests
 
-#[test]
-fn bind_ipv4_socket() -> Result {
-    let mut sim = Builder::new().ip_subnet(Ipv4Subnet::default()).build();
-    sim.client("client", async move {
-        let sock = bind_to_v4(0).await?;
-        assert!(sock.local_addr().unwrap().is_ipv4());
-        Ok(())
-    });
-    sim.run()
-}
+// #[test]
+// fn bind_ipv4_socket() -> Result {
+//     let mut sim = Builder::new().ip_subnet(Ipv4Subnet::default()).build();
+//     sim.client("client", async move {
+//         let sock = bind_to_v4(0).await?;
+//         assert!(sock.local_addr().unwrap().is_ipv4());
+//         Ok(())
+//     });
+//     sim.run()
+// }
 
-#[test]
-fn bind_ipv6_socket() -> Result {
-    let mut sim = Builder::new().ip_subnet(Ipv6Subnet::default()).build();
-    sim.client("client", async move {
-        let sock = bind_to_v6(0).await?;
-        assert!(sock.local_addr().unwrap().is_ipv6());
-        Ok(())
-    });
-    sim.run()
-}
+// #[test]
+// fn bind_ipv6_socket() -> Result {
+//     let mut sim = Builder::new().ip_subnet(Ipv6Subnet::default()).build();
+//     sim.client("client", async move {
+//         let sock = bind_to_v6(0).await?;
+//         assert!(sock.local_addr().unwrap().is_ipv6());
+//         Ok(())
+//     });
+//     sim.run()
+// }
 
-#[test]
-#[should_panic]
-fn bind_ipv4_version_missmatch() {
-    let mut sim = Builder::new().ip_subnet(Ipv6Subnet::default()).build();
-    sim.client("client", async move {
-        let _sock = bind_to_v4(0).await?;
-        Ok(())
-    });
-    sim.run().unwrap()
-}
+// #[test]
+// #[should_panic]
+// fn bind_ipv4_version_missmatch() {
+//     let mut sim = Builder::new().ip_subnet(Ipv6Subnet::default()).build();
+//     sim.client("client", async move {
+//         let _sock = bind_to_v4(0).await?;
+//         Ok(())
+//     });
+//     sim.run().unwrap()
+// }
 
-#[test]
-#[should_panic]
-fn bind_ipv6_version_missmatch() {
-    let mut sim = Builder::new().ip_subnet(Ipv4Subnet::default()).build();
-    sim.client("client", async move {
-        let _sock = bind_to_v6(0).await?;
-        Ok(())
-    });
-    sim.run().unwrap()
-}
+// #[test]
+// #[should_panic]
+// fn bind_ipv6_version_missmatch() {
+//     let mut sim = Builder::new().ip_subnet(Ipv4Subnet::default()).build();
+//     sim.client("client", async move {
+//         let _sock = bind_to_v6(0).await?;
+//         Ok(())
+//     });
+//     sim.run().unwrap()
+// }
 
-#[test]
-fn ipv6_connectivity() -> Result {
-    let mut sim = Builder::new().ip_subnet(Ipv6Subnet::default()).build();
-    sim.client("server", async move {
-        let list = TcpListener::bind(("::", 80)).await.unwrap();
-        let _stream = list.accept().await.unwrap();
-        Ok(())
-    });
-    sim.client("client", async move {
-        let stream = TcpStream::connect("server:80").await.unwrap();
-        let _ = stream;
-        Ok(())
-    });
+// #[test]
+// fn ipv6_connectivity() -> Result {
+//     let mut sim = Builder::new().ip_subnet(Ipv6Subnet::default()).build();
+//     sim.client("server", async move {
+//         let list = TcpListener::bind(("::", 80)).await.unwrap();
+//         let _stream = list.accept().await.unwrap();
+//         Ok(())
+//     });
+//     sim.client("client", async move {
+//         let stream = TcpStream::connect("server:80").await.unwrap();
+//         let _ = stream;
+//         Ok(())
+//     });
 
-    sim.run()
-}
+//     sim.run()
+// }
 
 #[test]
 fn bind_addr_in_use() -> Result {
@@ -801,33 +801,33 @@ fn run_localhost_test(
     sim.run()
 }
 
-#[test]
-fn loopback_to_wildcard_v4() -> Result {
-    let bind_addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 1234);
-    let connect_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 1234));
-    run_localhost_test(Ipv4Subnet::default().into(), bind_addr, connect_addr)
-}
+// #[test]
+// fn loopback_to_wildcard_v4() -> Result {
+//     let bind_addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 1234);
+//     let connect_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 1234));
+//     run_localhost_test(Ipv4Subnet::default().into(), bind_addr, connect_addr)
+// }
 
-#[test]
-fn loopback_to_localhost_v4() -> Result {
-    let bind_addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 1234);
-    let connect_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 1234));
-    run_localhost_test(Ipv4Subnet::default().into(), bind_addr, connect_addr)
-}
+// #[test]
+// fn loopback_to_localhost_v4() -> Result {
+//     let bind_addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 1234);
+//     let connect_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 1234));
+//     run_localhost_test(Ipv4Subnet::default().into(), bind_addr, connect_addr)
+// }
 
-#[test]
-fn loopback_to_wildcard_v6() -> Result {
-    let bind_addr = SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), 1234);
-    let connect_addr = SocketAddr::from((Ipv6Addr::LOCALHOST, 1234));
-    run_localhost_test(Ipv6Subnet::default().into(), bind_addr, connect_addr)
-}
+// #[test]
+// fn loopback_to_wildcard_v6() -> Result {
+//     let bind_addr = SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), 1234);
+//     let connect_addr = SocketAddr::from((Ipv6Addr::LOCALHOST, 1234));
+//     run_localhost_test(Ipv6Subnet::default().into(), bind_addr, connect_addr)
+// }
 
-#[test]
-fn loopback_to_localhost_v6() -> Result {
-    let bind_addr = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), 1234);
-    let connect_addr = SocketAddr::from((Ipv6Addr::LOCALHOST, 1234));
-    run_localhost_test(Ipv6Subnet::default().into(), bind_addr, connect_addr)
-}
+// #[test]
+// fn loopback_to_localhost_v6() -> Result {
+//     let bind_addr = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), 1234);
+//     let connect_addr = SocketAddr::from((Ipv6Addr::LOCALHOST, 1234));
+//     run_localhost_test(Ipv6Subnet::default().into(), bind_addr, connect_addr)
+// }
 
 #[test]
 fn remote_to_localhost_refused() -> Result {

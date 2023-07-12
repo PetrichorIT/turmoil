@@ -1,4 +1,5 @@
 use crate::envelope::{hex, Datagram, Protocol, Segment, Syn};
+use crate::ip::HostAddrPair;
 use crate::net::{SocketPair, TcpListener, UdpSocket};
 use crate::world::World;
 use crate::{Envelope, TRACING_TARGET};
@@ -20,7 +21,7 @@ use tokio::time::{Duration, Instant};
 /// Both modes may be used simultaneously.
 pub(crate) struct Host {
     /// Host ip address.
-    pub(crate) addr: IpAddr,
+    pub(crate) addrs: HostAddrPair,
 
     /// L4 User Datagram Protocol (UDP).
     pub(crate) udp: Udp,
@@ -40,15 +41,19 @@ pub(crate) struct Host {
 }
 
 impl Host {
-    pub(crate) fn new(addr: IpAddr, tcp_capacity: usize, udp_capacity: usize) -> Host {
+    pub(crate) fn new(addrs: HostAddrPair, tcp_capacity: usize, udp_capacity: usize) -> Host {
         Host {
-            addr,
+            addrs,
             udp: Udp::new(udp_capacity),
             tcp: Tcp::new(tcp_capacity),
             next_ephemeral_port: 49152,
             elapsed: Duration::ZERO,
             now: None,
         }
+    }
+
+    pub fn is_dst_for(&self, ip: IpAddr) -> bool {
+        ip == self.addrs.ipv4 || ip == self.addrs.ipv6
     }
 
     /// Set a new `Instant` for each iteration of the simulation. `elapsed` is
@@ -421,14 +426,23 @@ pub fn matches(bind: SocketAddr, dst: SocketAddr) -> bool {
 
 #[cfg(test)]
 mod test {
-    use crate::{Host, Result};
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    use crate::{ip::HostAddrPair, Host, Result};
 
     #[test]
     fn recycle_ports() -> Result {
-        let mut host = Host::new(std::net::Ipv4Addr::UNSPECIFIED.into(), 1, 1);
+        let mut host = Host::new(
+            HostAddrPair {
+                ipv4: Ipv4Addr::new(192, 168, 2, 1),
+                ipv6: Ipv6Addr::UNSPECIFIED,
+            },
+            1,
+            1,
+        );
 
-        host.udp.bind((host.addr, 65534).into())?;
-        host.udp.bind((host.addr, 65535).into())?;
+        host.udp.bind((host.addrs.ipv4, 65534).into())?;
+        host.udp.bind((host.addrs.ipv4, 65535).into())?;
 
         for _ in 49152..65534 {
             host.assign_ephemeral_port();

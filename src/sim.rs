@@ -1,6 +1,7 @@
-use crate::{for_pairs, Config, LinksIter, Result, Rt, ToIpAddr, ToIpAddrs, World, TRACING_TARGET};
+use crate::ip::HostAddrPair;
+use crate::{for_pairs, Config, LinksIter, Result, Rt, ToIpAddrs, World, TRACING_TARGET};
 
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use std::cell::RefCell;
 use std::future::Future;
 use std::net::IpAddr;
@@ -19,7 +20,7 @@ pub struct Sim<'a> {
     world: RefCell<World>,
 
     /// Per simulated host runtimes
-    rts: IndexMap<IpAddr, Rt<'a>>,
+    rts: IndexMap<HostAddrPair, Rt<'a>>,
 
     /// Simulation duration since unix epoch. Set when the simulation is
     /// created.
@@ -60,22 +61,20 @@ impl<'a> Sim<'a> {
     }
 
     /// Register a client with the simulation.
-    pub fn client<F>(&mut self, addr: impl ToIpAddr, client: F)
+    pub fn client<F>(&mut self, addr: impl ToIpAddrs, client: F)
     where
         F: Future<Output = Result> + 'static,
     {
-        let addr = self.lookup(addr);
-
-        {
+        let host_addr = {
             let world = RefCell::get_mut(&mut self.world);
 
             // Register host state with the world
-            world.register(addr, &self.config);
-        }
+            world.register(addr, &self.config)
+        };
 
         let rt = World::enter(&self.world, || Rt::client(client));
 
-        self.rts.insert(addr, rt);
+        self.rts.insert(host_addr, rt);
     }
 
     /// Register a host with the simulation.
@@ -84,23 +83,21 @@ impl<'a> Sim<'a> {
     /// [`Sim::client`] which just takes a future. The reason for this is we
     /// might restart the host, and so need to be able to call the future
     /// multiple times.
-    pub fn host<F, Fut>(&mut self, addr: impl ToIpAddr, host: F)
+    pub fn host<F, Fut>(&mut self, addr: impl ToIpAddrs, host: F)
     where
         F: Fn() -> Fut + 'a,
         Fut: Future<Output = Result> + 'static,
     {
-        let addr = self.lookup(addr);
-
-        {
+        let host_addr = {
             let world = RefCell::get_mut(&mut self.world);
 
             // Register host state with the world
-            world.register(addr, &self.config);
-        }
+            world.register(addr, &self.config)
+        };
 
         let rt = World::enter(&self.world, || Rt::host(host));
 
-        self.rts.insert(addr, rt);
+        self.rts.insert(host_addr, rt);
     }
 
     /// Crashes the resolved hosts. Nothing will be running on the matched hosts
@@ -124,8 +121,9 @@ impl<'a> Sim<'a> {
     }
 
     /// Run `f` with the resolved hosts at `addrs` set on the world.
-    fn run_with_hosts(&mut self, addrs: impl ToIpAddrs, mut f: impl FnMut(IpAddr, &mut Rt)) {
-        let hosts = self.world.borrow_mut().lookup_many(addrs);
+    fn run_with_hosts(&mut self, addrs: impl ToIpAddrs, mut f: impl FnMut(HostAddrPair, &mut Rt)) {
+        let addrs = self.world.borrow_mut().lookup(addrs);
+        let hosts = self.addrs_to_hosts(&addrs);
         for h in hosts {
             let rt = self.rts.get_mut(&h).expect("missing host");
 
@@ -137,9 +135,21 @@ impl<'a> Sim<'a> {
         self.world.borrow_mut().current = None;
     }
 
+    fn addrs_to_hosts(&self, addrs: &[IpAddr]) -> IndexSet<HostAddrPair> {
+        let mut set = IndexSet::new();
+        let keys = self.rts.keys().collect::<Vec<_>>();
+        for addr in addrs {
+            if let Some(key) = keys.iter().find(|k| k.ipv4 == *addr || k.ipv6 == *addr) {
+                set.insert(**key);
+            }
+        }
+        set
+    }
+
     /// Check whether a host has software running.
-    pub fn is_host_running(&mut self, addr: impl ToIpAddr) -> bool {
-        let host = self.world.borrow_mut().lookup(addr);
+    pub fn is_host_running(&mut self, addr: impl ToIpAddrs) -> bool {
+        let addrs = self.world.borrow_mut().lookup(addr);
+        let host = self.addrs_to_hosts(&addrs)[0];
 
         self.rts
             .get(&host)
@@ -148,7 +158,7 @@ impl<'a> Sim<'a> {
     }
 
     /// Lookup an IP address by host name.
-    pub fn lookup(&self, addr: impl ToIpAddr) -> IpAddr {
+    pub fn lookup(&self, addr: impl ToIpAddrs) -> Vec<IpAddr> {
         self.world.borrow_mut().lookup(addr)
     }
 
@@ -172,11 +182,6 @@ impl<'a> Sim<'a> {
         )
     }
 
-    /// Lookup IP addresses for resolved hosts.
-    pub fn lookup_many(&self, addr: impl ToIpAddrs) -> Vec<IpAddr> {
-        self.world.borrow_mut().lookup_many(addr)
-    }
-
     /// Set the max message latency for all links.
     pub fn set_max_message_latency(&self, value: Duration) {
         self.world
@@ -191,11 +196,13 @@ impl<'a> Sim<'a> {
     /// latency.
     pub fn set_link_latency(&self, a: impl ToIpAddrs, b: impl ToIpAddrs, value: Duration) {
         let mut world = self.world.borrow_mut();
-        let a = world.lookup_many(a);
-        let b = world.lookup_many(b);
+        let a = world.lookup(a);
+        let b = world.lookup(b);
 
         for_pairs(&a, &b, |a, b| {
-            world.topology.set_link_message_latency(a, b, value);
+            if a.is_ipv4() == b.is_ipv4() {
+                world.topology.set_link_message_latency(a, b, value);
+            }
         });
     }
 
@@ -207,8 +214,8 @@ impl<'a> Sim<'a> {
         value: Duration,
     ) {
         let mut world = self.world.borrow_mut();
-        let a = world.lookup_many(a);
-        let b = world.lookup_many(b);
+        let a = world.lookup(a);
+        let b = world.lookup(b);
 
         for_pairs(&a, &b, |a, b| {
             world.topology.set_link_max_message_latency(a, b, value);
@@ -232,8 +239,8 @@ impl<'a> Sim<'a> {
 
     pub fn set_link_fail_rate(&mut self, a: impl ToIpAddrs, b: impl ToIpAddrs, value: f64) {
         let mut world = self.world.borrow_mut();
-        let a = world.lookup_many(a);
-        let b = world.lookup_many(b);
+        let a = world.lookup(a);
+        let b = world.lookup(b);
 
         for_pairs(&a, &b, |a, b| {
             world.topology.set_link_fail_rate(a, b, value);
@@ -252,6 +259,8 @@ impl<'a> Sim<'a> {
     /// Executes a simple event loop that calls [step](#method.step) each iteration,
     /// returning early if any host software errors.
     pub fn run(&mut self) -> Result {
+        // dbg!(&self.world.borrow().topology);
+
         loop {
             let is_finished = self.step()?;
 

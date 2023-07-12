@@ -1,3 +1,4 @@
+use std::fmt;
 use std::mem;
 
 use super::Result;
@@ -44,6 +45,12 @@ pub(crate) struct Rt<'a> {
     /// Optional handle to a host's software. When software finishes, the handle is
     /// consumed to check for error, which is propagated up to fail the simulation.
     handle: Option<JoinHandle<Result>>,
+}
+
+impl fmt::Debug for Rt<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Rt").finish()
+    }
 }
 
 impl<'a> Rt<'a> {

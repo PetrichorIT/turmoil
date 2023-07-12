@@ -111,9 +111,9 @@ impl UdpSocket {
                 panic!("{addr} is not supported");
             }
 
-            if addr.is_ipv4() != host.addr.is_ipv4() {
-                panic!("ip version mismatch: {:?} host: {:?}", addr, host.addr)
-            }
+            // if addr.is_ipv4() != host.addr.is_ipv4() {
+            //     panic!("ip version mismatch: {:?} host: {:?}", addr, host.addr)
+            // }
 
             if addr.port() == 0 {
                 addr.set_port(host.assign_ephemeral_port());
@@ -285,7 +285,11 @@ impl UdpSocket {
             src.set_ip(dst.ip());
         }
         if src.ip().is_unspecified() {
-            src.set_ip(world.current_host_mut().addr);
+            src.set_ip(if self.local_addr.is_ipv4() {
+                world.current_host_mut().addrs.ipv4.into()
+            } else {
+                world.current_host_mut().addrs.ipv6.into()
+            });
         }
 
         if dst.ip().is_loopback() {

@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::envelope::Protocol;
-use crate::{config, Dns, Host, IpSubnet, ToIpAddr, ToIpAddrs, Topology, TRACING_TARGET};
+use crate::ip::HostAddrPair;
+use crate::{config, Dns, Host, IpSubnet, ToIpAddrs, Topology};
 
 use indexmap::IndexMap;
 use rand::RngCore;
@@ -11,11 +12,10 @@ use std::time::Duration;
 
 /// Tracks all the state for the simulated world.
 pub(crate) struct World {
-    /// Defines the available address range of the simulation.
-    pub(crate) subnet: IpSubnet,
+    pub(crate) ip_to_host_mapping: IndexMap<IpAddr, HostAddrPair>,
 
     /// Tracks all individual hosts
-    pub(crate) hosts: IndexMap<IpAddr, Host>,
+    pub(crate) hosts: IndexMap<HostAddrPair, Host>,
 
     /// Tracks how each host is connected to each other.
     pub(crate) topology: Topology,
@@ -24,7 +24,7 @@ pub(crate) struct World {
     pub(crate) dns: Dns,
 
     /// If set, this is the current host being executed.
-    pub(crate) current: Option<IpAddr>,
+    pub(crate) current: Option<HostAddrPair>,
 
     /// Random number generator used for all decisions. To make execution
     /// determinstic, reuse the same seed.
@@ -35,12 +35,12 @@ scoped_thread_local!(static CURRENT: RefCell<World>);
 
 impl World {
     /// Initialize a new world.
-    pub(crate) fn new(link: config::Link, rng: Box<dyn RngCore>, ip_net: IpSubnet) -> World {
+    pub(crate) fn new(link: config::Link, rng: Box<dyn RngCore>, subnets: IpSubnet) -> World {
         World {
-            subnet: ip_net,
+            ip_to_host_mapping: IndexMap::new(),
             hosts: IndexMap::new(),
             topology: Topology::new(link),
-            dns: Dns::new(ip_net.iter()),
+            dns: Dns::new(subnets.iter()),
             current: None,
             rng,
         }
@@ -73,12 +73,8 @@ impl World {
         self.hosts.get_mut(&addr).expect("host missing")
     }
 
-    pub(crate) fn lookup(&mut self, host: impl ToIpAddr) -> IpAddr {
+    pub(crate) fn lookup(&mut self, host: impl ToIpAddrs) -> Vec<IpAddr> {
         self.dns.lookup(host)
-    }
-
-    pub(crate) fn lookup_many(&mut self, hosts: impl ToIpAddrs) -> Vec<IpAddr> {
-        self.dns.lookup_many(hosts)
     }
 
     pub(crate) fn hold(&mut self, a: IpAddr, b: IpAddr) {
@@ -98,28 +94,34 @@ impl World {
     }
 
     /// Register a new host with the simulation.
-    pub(crate) fn register(&mut self, addr: IpAddr, config: &Config) {
-        assert!(
-            !self.hosts.contains_key(&addr),
-            "already registered host for the given ip address"
-        );
-        assert!(
-            self.subnet.contains(addr),
-            "node address is not contained within the available subnet"
-        );
+    pub(crate) fn register(&mut self, addr: impl ToIpAddrs, config: &Config) -> HostAddrPair {
+        // assert!(
+        //     !self.hosts.contains_key(&addr),
+        //     "already registered host for the given ip address"
+        // );
+        // assert!(
+        //     self.subnet.contains(addr),
+        //     "node address is not contained within the available subnet"
+        // );
 
-        tracing::info!(target: TRACING_TARGET, hostname = ?self.dns.reverse(addr), ?addr, "New");
+        let host = self.dns.register(addr);
+
+        // tracing::info!(target: TRACING_TARGET, hostname = ?self.dns.reverse(addr), ?addr, "New");
 
         // Register links between the new host and all existing hosts
         for existing in self.hosts.keys() {
-            self.topology.register(*existing, addr);
+            self.topology
+                .register(existing.ipv4.into(), host.ipv4.into());
+            self.topology
+                .register(existing.ipv6.into(), host.ipv6.into());
         }
 
         // Initialize host state
         self.hosts.insert(
-            addr,
-            Host::new(addr, config.tcp_capacity, config.udp_capacity),
+            host,
+            Host::new(host, config.tcp_capacity, config.udp_capacity),
         );
+        host
     }
 
     /// Send `message` from `src` to `dst`. Delivery is asynchronous and not
@@ -130,9 +132,9 @@ impl World {
     }
 
     /// Tick the host at `addr` by `duration`.
-    pub(crate) fn tick(&mut self, addr: IpAddr, duration: Duration) {
+    pub(crate) fn tick(&mut self, host: HostAddrPair, duration: Duration) {
         self.hosts
-            .get_mut(&addr)
+            .get_mut(&host)
             .expect("missing host")
             .tick(duration);
     }

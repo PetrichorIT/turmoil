@@ -12,6 +12,7 @@ use std::time::Duration;
 use tokio::time::Instant;
 
 /// Describes the network topology.
+#[derive(Debug)]
 pub(crate) struct Topology {
     config: config::Link,
 
@@ -131,6 +132,7 @@ impl<'a> Iterator for LinkIter<'a> {
 }
 
 /// A two-way link between two hosts on the network.
+#[derive(Debug)]
 struct Link {
     state: State,
 
@@ -148,6 +150,7 @@ struct Link {
     now: Instant,
 }
 
+#[derive(Debug)]
 enum State {
     /// The link is healthy.
     Healthy,
@@ -182,6 +185,7 @@ impl Topology {
     }
 
     pub(crate) fn set_link_message_latency(&mut self, a: IpAddr, b: IpAddr, value: Duration) {
+        dbg!(a, b);
         let latency = self.links[&Pair::new(a, b)].latency(self.config.latency());
         latency.min_message_latency = value;
         latency.max_message_latency = value;
@@ -217,6 +221,7 @@ impl Topology {
         dst: SocketAddr,
         message: Protocol,
     ) {
+        dbg!(src, dst);
         let link = &mut self.links[&Pair::new(src.ip(), dst.ip())];
         link.enqueue_message(&self.config, rand, src, dst, message);
     }
@@ -224,7 +229,7 @@ impl Topology {
     // Move messages from any network links to the `dst` host.
     pub(crate) fn deliver_messages(&mut self, rand: &mut dyn RngCore, dst: &mut Host) {
         for (pair, link) in &mut self.links {
-            if pair.0 == dst.addr || pair.1 == dst.addr {
+            if dst.is_dst_for(pair.0) || dst.is_dst_for(pair.1) {
                 link.deliver_messages(&self.config, rand, dst);
             }
         }
@@ -260,6 +265,7 @@ impl Topology {
     }
 }
 
+#[derive(Debug)]
 struct Sent {
     src: SocketAddr,
     dst: SocketAddr,
@@ -273,6 +279,7 @@ impl Sent {
     }
 }
 
+#[derive(Debug)]
 enum DeliveryStatus {
     DeliverAfter(Instant),
     Hold,
@@ -385,7 +392,23 @@ impl Link {
     ) {
         let deliverable = self
             .deliverable
-            .entry(host.addr)
+            .entry(host.addrs.ipv4.into())
+            .or_default()
+            .drain(..)
+            .collect::<Vec<Envelope>>();
+
+        for message in deliverable {
+            let (src, dst) = (message.src, message.dst);
+            if let Err(message) = host.receive_from_network(message) {
+                self.enqueue_message(global_config, rand, dst, src, message);
+            }
+        }
+
+        // TOOD: better
+
+        let deliverable = self
+            .deliverable
+            .entry(host.addrs.ipv6.into())
             .or_default()
             .drain(..)
             .collect::<Vec<Envelope>>();
