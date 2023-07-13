@@ -14,6 +14,8 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, Notify};
 use tokio::time::{Duration, Instant};
 
+pub type HostIdentifier = usize;
+
 /// A host in the simulated network.
 ///
 /// Hosts have [`Udp`] and [`Tcp`] software available for networking.

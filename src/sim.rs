@@ -1,4 +1,4 @@
-use crate::ip::HostAddrPair;
+use crate::host::HostIdentifier;
 use crate::{for_pairs, Config, LinksIter, Result, Rt, ToIpAddrs, World, TRACING_TARGET};
 
 use indexmap::{IndexMap, IndexSet};
@@ -20,7 +20,10 @@ pub struct Sim<'a> {
     world: RefCell<World>,
 
     /// Per simulated host runtimes
-    rts: IndexMap<HostAddrPair, Rt<'a>>,
+    rts: IndexMap<HostIdentifier, Rt<'a>>,
+
+    /// A unique identifer for the next host that will be created.
+    next_host_identifier: HostIdentifier,
 
     /// Simulation duration since unix epoch. Set when the simulation is
     /// created.
@@ -41,6 +44,7 @@ impl<'a> Sim<'a> {
             config,
             world: RefCell::new(world),
             rts: IndexMap::new(),
+            next_host_identifier: 0,
             since_epoch,
             elapsed: Duration::ZERO,
         }
@@ -65,16 +69,18 @@ impl<'a> Sim<'a> {
     where
         F: Future<Output = Result> + 'static,
     {
-        let host_addr = {
+        let id = self.next_host_identifer();
+
+        {
             let world = RefCell::get_mut(&mut self.world);
 
             // Register host state with the world
-            world.register(addr, &self.config)
+            world.register(id, addr, &self.config)
         };
 
         let rt = World::enter(&self.world, || Rt::client(client));
 
-        self.rts.insert(host_addr, rt);
+        self.rts.insert(id, rt);
     }
 
     /// Register a host with the simulation.
@@ -88,16 +94,16 @@ impl<'a> Sim<'a> {
         F: Fn() -> Fut + 'a,
         Fut: Future<Output = Result> + 'static,
     {
-        let host_addr = {
+        let id = self.next_host_identifer();
+        {
             let world = RefCell::get_mut(&mut self.world);
 
             // Register host state with the world
-            world.register(addr, &self.config)
+            world.register(id, addr, &self.config)
         };
 
         let rt = World::enter(&self.world, || Rt::host(host));
-
-        self.rts.insert(host_addr, rt);
+        self.rts.insert(id, rt);
     }
 
     /// Crashes the resolved hosts. Nothing will be running on the matched hosts
@@ -120,8 +126,18 @@ impl<'a> Sim<'a> {
         });
     }
 
+    fn next_host_identifer(&mut self) -> HostIdentifier {
+        let id = self.next_host_identifier;
+        self.next_host_identifier = self.next_host_identifier.wrapping_add(1);
+        id
+    }
+
     /// Run `f` with the resolved hosts at `addrs` set on the world.
-    fn run_with_hosts(&mut self, addrs: impl ToIpAddrs, mut f: impl FnMut(HostAddrPair, &mut Rt)) {
+    fn run_with_hosts(
+        &mut self,
+        addrs: impl ToIpAddrs,
+        mut f: impl FnMut(HostIdentifier, &mut Rt),
+    ) {
         let addrs = self.world.borrow_mut().lookup(addrs);
         let hosts = self.addrs_to_hosts(&addrs);
         for h in hosts {
@@ -135,12 +151,12 @@ impl<'a> Sim<'a> {
         self.world.borrow_mut().current = None;
     }
 
-    fn addrs_to_hosts(&self, addrs: &[IpAddr]) -> IndexSet<HostAddrPair> {
+    fn addrs_to_hosts(&self, addrs: &[IpAddr]) -> IndexSet<HostIdentifier> {
+        let world = self.world.borrow_mut();
         let mut set = IndexSet::new();
-        let keys = self.rts.keys().collect::<Vec<_>>();
         for addr in addrs {
-            if let Some(key) = keys.iter().find(|k| k.ipv4 == *addr || k.ipv6 == *addr) {
-                set.insert(**key);
+            if let Some((id, _)) = world.hosts.iter().find(|(_, h)| h.addrs.contains(*addr)) {
+                set.insert(*id);
             }
         }
         set

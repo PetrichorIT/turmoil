@@ -1,12 +1,21 @@
 use std::{
-    fmt::Display,
+    error::Error,
+    fmt::{Debug, Display},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    ops::Deref,
+    str::FromStr,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct HostAddrPair {
     pub ipv4: Ipv4Addr,
     pub ipv6: Ipv6Addr,
+}
+
+impl HostAddrPair {
+    pub(crate) fn contains(&self, addr: IpAddr) -> bool {
+        self.ipv4 == addr || self.ipv6 == addr
+    }
 }
 
 impl HostAddrPair {
@@ -18,6 +27,73 @@ impl HostAddrPair {
 impl Display for HostAddrPair {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[{}, {}]", self.ipv4, self.ipv6)
+    }
+}
+
+pub struct IPSubnets {
+    subnets: Vec<IPSubnet>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IPSubnet {
+    V4(Ipv4Subnet),
+    V6(Ipv6Subnet),
+}
+
+impl IPSubnets {
+    pub fn new() -> Self {
+        Self {
+            subnets: Vec::new(),
+        }
+    }
+
+    pub fn add(&mut self, subnet: IPSubnet) {
+        assert!(
+            !self.intersects(&subnet),
+            "Cannot add subnet {subnet} to simulation, intersects with existing subnet"
+        )
+    }
+
+    fn intersects(&self, subnet: &IPSubnet) -> bool {
+        for existing in &self.subnets {
+            if existing.intersects(subnet) {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+impl Deref for IPSubnets {
+    type Target = [IPSubnet];
+    fn deref(&self) -> &Self::Target {
+        &self.subnets
+    }
+}
+
+impl IPSubnet {
+    fn intersects(&self, subnet: &IPSubnet) -> bool {
+        use IPSubnet::*;
+        match (self, subnet) {
+            (V4(lhs), V4(rhs)) => lhs.intersects(rhs),
+            (V6(lhs), V6(rhs)) => lhs.intersects(rhs),
+            _ => false,
+        }
+    }
+}
+
+impl FromStr for IPSubnet {
+    type Err = Box<dyn Error>;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ipv4Subnet::from_str(s)
+            .map(|net| IPSubnet::V4(net))
+            .or_else(|_| Ipv6Subnet::from_str(s).map(|net| IPSubnet::V6(net)))
+    }
+}
+
+impl Display for IPSubnet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        <Self as Debug>::fmt(self, f)
     }
 }
 
@@ -72,6 +148,38 @@ impl Ipv4Subnet {
     pub fn contains(&self, addr: Ipv4Addr) -> bool {
         u32::from(self.prefix) == u32::from(addr) & u32::from(self.mask)
     }
+
+    fn intersects(&self, subnet: &Ipv4Subnet) -> bool {
+        let lhs_start = u32::from(self.prefix);
+        let lhs_end = u32::from(self.prefix) | !u32::from(self.mask);
+        let rhs_start = u32::from(subnet.prefix);
+        let rhs_end = u32::from(subnet.prefix) | !u32::from(subnet.mask);
+
+        lhs_start <= rhs_end && rhs_start <= lhs_end
+    }
+}
+
+#[derive(Debug)]
+pub struct Ipv4SubnetParsingError;
+
+impl Display for Ipv4SubnetParsingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        <Self as Debug>::fmt(self, f)
+    }
+}
+impl Error for Ipv4SubnetParsingError {}
+
+impl FromStr for Ipv4Subnet {
+    type Err = Box<dyn Error>;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let Some((prefix, len)) = s.split_once('/') else {
+            return Err(Box::new(Ipv4SubnetParsingError))
+        };
+
+        let prefix = prefix.parse()?;
+        let prefixlen = len.parse()?;
+        Ok(Ipv4Subnet::new(prefix, prefixlen))
+    }
 }
 
 impl Display for Ipv4Subnet {
@@ -114,6 +222,38 @@ impl Ipv6Subnet {
 
     pub fn contains(&self, addr: Ipv6Addr) -> bool {
         u128::from(self.prefix) == u128::from(addr) & u128::from(self.mask)
+    }
+
+    fn intersects(&self, subnet: &Ipv6Subnet) -> bool {
+        let lhs_start = u128::from(self.prefix);
+        let lhs_end = u128::from(self.prefix) | !u128::from(self.mask);
+        let rhs_start = u128::from(subnet.prefix);
+        let rhs_end = u128::from(subnet.prefix) | !u128::from(subnet.mask);
+
+        lhs_start <= rhs_end && rhs_start <= lhs_end
+    }
+}
+
+#[derive(Debug)]
+pub struct Ipv6SubnetParsingError;
+
+impl Display for Ipv6SubnetParsingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        <Self as Debug>::fmt(self, f)
+    }
+}
+impl Error for Ipv6SubnetParsingError {}
+
+impl FromStr for Ipv6Subnet {
+    type Err = Box<dyn Error>;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let Some((prefix, len)) = s.split_once('/') else {
+            return Err(Box::new(Ipv4SubnetParsingError))
+        };
+
+        let prefix = prefix.parse()?;
+        let prefixlen = len.parse()?;
+        Ok(Ipv6Subnet::new(prefix, prefixlen))
     }
 }
 
@@ -167,6 +307,20 @@ impl IpSubnetIter {
 
         let host_masked = host & !u128::from(self.v6_subnet.mask);
         Ipv6Addr::from(u128::from(self.v6_subnet.prefix) | host_masked)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_subnets_manually() {
+        let mut subnets = IPSubnets::new();
+        subnets.add("192.168.0.0/16".parse().unwrap());
+        subnets.add("fe80::/64".parse().unwrap());
+
+        assert_eq!(subnets.len(), 2);
     }
 }
 

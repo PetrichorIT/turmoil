@@ -389,28 +389,21 @@ impl Link {
         rand: &mut dyn RngCore,
         host: &mut Host,
     ) {
-        let deliverable = self
-            .deliverable
-            .entry(host.addrs.ipv4.into())
-            .or_default()
-            .drain(..)
-            .collect::<Vec<Envelope>>();
+        let mut deliverable = Vec::new();
 
-        for message in deliverable {
-            let (src, dst) = (message.src, message.dst);
-            if let Err(message) = host.receive_from_network(message) {
-                self.enqueue_message(global_config, rand, dst, src, message);
-            }
-        }
+        deliverable.extend(
+            self.deliverable
+                .entry(host.addrs.ipv4.into())
+                .or_default()
+                .drain(..),
+        );
 
-        // TOOD: better
-
-        let deliverable = self
-            .deliverable
-            .entry(host.addrs.ipv6.into())
-            .or_default()
-            .drain(..)
-            .collect::<Vec<Envelope>>();
+        deliverable.extend(
+            self.deliverable
+                .entry(host.addrs.ipv6.into())
+                .or_default()
+                .drain(..),
+        );
 
         for message in deliverable {
             let (src, dst) = (message.src, message.dst);

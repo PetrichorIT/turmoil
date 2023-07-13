@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::envelope::Protocol;
+use crate::host::HostIdentifier;
 use crate::ip::HostAddrPair;
 use crate::{config, Dns, Host, IpSubnet, ToIpAddrs, Topology, TRACING_TARGET};
 
@@ -13,7 +14,7 @@ use std::time::Duration;
 /// Tracks all the state for the simulated world.
 pub(crate) struct World {
     /// Tracks all individual hosts
-    pub(crate) hosts: IndexMap<HostAddrPair, Host>,
+    pub(crate) hosts: IndexMap<HostIdentifier, Host>,
 
     /// Tracks how each host is connected to each other.
     pub(crate) topology: Topology,
@@ -22,7 +23,7 @@ pub(crate) struct World {
     pub(crate) dns: Dns,
 
     /// If set, this is the current host being executed.
-    pub(crate) current: Option<HostAddrPair>,
+    pub(crate) current: Option<HostIdentifier>,
 
     /// Random number generator used for all decisions. To make execution
     /// determinstic, reuse the same seed.
@@ -91,22 +92,27 @@ impl World {
     }
 
     /// Register a new host with the simulation.
-    pub(crate) fn register(&mut self, addr: impl ToIpAddrs, config: &Config) -> HostAddrPair {
+    pub(crate) fn register(
+        &mut self,
+        id: HostIdentifier,
+        addr: impl ToIpAddrs,
+        config: &Config,
+    ) -> HostAddrPair {
         let addrs = self.dns.register(addr);
 
         tracing::info!(target: TRACING_TARGET, hostname = ?self.dns.reverse(addrs.ipv4.into()), %addrs, "New");
 
         // Register links between the new host and all existing hosts
-        for existing in self.hosts.keys() {
+        for existing in self.hosts.values() {
             self.topology
-                .register(existing.ipv4.into(), addrs.ipv4.into());
+                .register(existing.addrs.ipv4.into(), addrs.ipv4.into());
             self.topology
-                .register(existing.ipv6.into(), addrs.ipv6.into());
+                .register(existing.addrs.ipv6.into(), addrs.ipv6.into());
         }
 
         // Initialize host state
         self.hosts.insert(
-            addrs,
+            id,
             Host::new(addrs, config.tcp_capacity, config.udp_capacity),
         );
         addrs
@@ -120,7 +126,7 @@ impl World {
     }
 
     /// Tick the host at `addr` by `duration`.
-    pub(crate) fn tick(&mut self, host: HostAddrPair, duration: Duration) {
+    pub(crate) fn tick(&mut self, host: HostIdentifier, duration: Duration) {
         self.hosts
             .get_mut(&host)
             .expect("missing host")
