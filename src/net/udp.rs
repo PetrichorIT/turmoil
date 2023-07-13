@@ -11,7 +11,7 @@ use crate::{
 
 use std::{
     cmp,
-    io::{self, Result},
+    io::{self, Error, ErrorKind, Result},
     net::SocketAddr,
     time::Duration,
 };
@@ -145,7 +145,7 @@ impl UdpSocket {
     pub async fn send_to<A: ToSocketAddrs>(&self, buf: &[u8], target: A) -> Result<usize> {
         World::current(|world| {
             let dst = target.to_socket_addr(&world.dns);
-            self.send(world, dst, Datagram(Bytes::copy_from_slice(buf)));
+            self.send(world, dst, Datagram(Bytes::copy_from_slice(buf)))?;
             Ok(buf.len())
         })
     }
@@ -167,7 +167,7 @@ impl UdpSocket {
     pub fn try_send_to<A: ToSocketAddrs>(&self, buf: &[u8], target: A) -> Result<usize> {
         World::current(|world| {
             let dst = target.to_socket_addr(&world.dns);
-            self.send(world, dst, Datagram(Bytes::copy_from_slice(buf)));
+            self.send(world, dst, Datagram(Bytes::copy_from_slice(buf)))?;
             Ok(buf.len())
         })
     }
@@ -277,7 +277,7 @@ impl UdpSocket {
         Ok(self.local_addr)
     }
 
-    fn send(&self, world: &mut World, dst: SocketAddr, packet: Datagram) {
+    fn send(&self, world: &mut World, dst: SocketAddr, packet: Datagram) -> Result<()> {
         let msg = Protocol::Udp(packet);
 
         let mut src = self.local_addr;
@@ -285,11 +285,19 @@ impl UdpSocket {
             src.set_ip(dst.ip());
         }
         if src.ip().is_unspecified() {
-            src.set_ip(if self.local_addr.is_ipv4() {
+            let host_ip = if self.local_addr.is_ipv4() {
                 world.current_host_mut().addrs.ipv4.into()
             } else {
                 world.current_host_mut().addrs.ipv6.into()
-            });
+            };
+            src.set_ip(host_ip);
+        }
+
+        if src.is_ipv4() != dst.is_ipv4() {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "invalid argument - src and dst socket use different ip versions",
+            ));
         }
 
         if dst.ip().is_loopback() {
@@ -297,6 +305,8 @@ impl UdpSocket {
         } else {
             world.send_message(src, dst, msg);
         }
+
+        Ok(())
     }
 }
 

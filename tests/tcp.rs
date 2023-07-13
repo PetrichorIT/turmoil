@@ -12,6 +12,7 @@ use tokio::{
     time::timeout,
 };
 use turmoil::{
+    lookup,
     net::{TcpListener, TcpStream},
     Builder, IpSubnet, Ipv4Subnet, Ipv6Subnet, Result,
 };
@@ -684,66 +685,62 @@ fn split() -> Result {
 
 // # IpVersion specific tests
 
-// #[test]
-// fn bind_ipv4_socket() -> Result {
-//     let mut sim = Builder::new().ip_subnet(Ipv4Subnet::default()).build();
-//     sim.client("client", async move {
-//         let sock = bind_to_v4(0).await?;
-//         assert!(sock.local_addr().unwrap().is_ipv4());
-//         Ok(())
-//     });
-//     sim.run()
-// }
+#[test]
+fn ipv4_connectivity() {
+    let mut sim = Builder::new().build();
+    sim.client("client", async move {
+        let v4_addr = lookup("server")
+            .into_iter()
+            .find(IpAddr::is_ipv4)
+            .expect("An Ipv4 address should be available");
+        let mut sock = TcpStream::connect((v4_addr, 80)).await?;
+        sock.write_all(b"Hello World").await?;
 
-// #[test]
-// fn bind_ipv6_socket() -> Result {
-//     let mut sim = Builder::new().ip_subnet(Ipv6Subnet::default()).build();
-//     sim.client("client", async move {
-//         let sock = bind_to_v6(0).await?;
-//         assert!(sock.local_addr().unwrap().is_ipv6());
-//         Ok(())
-//     });
-//     sim.run()
-// }
+        let mut buf = [0; 100];
+        let n = sock.read(&mut buf).await?;
+        assert_eq!(&buf[..n], b"Hello World");
 
-// #[test]
-// #[should_panic]
-// fn bind_ipv4_version_missmatch() {
-//     let mut sim = Builder::new().ip_subnet(Ipv6Subnet::default()).build();
-//     sim.client("client", async move {
-//         let _sock = bind_to_v4(0).await?;
-//         Ok(())
-//     });
-//     sim.run().unwrap()
-// }
+        Ok(())
+    });
+    sim.client("server", async move {
+        let lis = TcpListener::bind("0.0.0.0:80").await?;
+        let (mut sock, _) = lis.accept().await?;
+        let mut buf = [0; 100];
+        let n = sock.read(&mut buf).await?;
+        sock.write_all(&buf[..n]).await?;
+        Ok(())
+    });
+}
 
-// #[test]
-// #[should_panic]
-// fn bind_ipv6_version_missmatch() {
-//     let mut sim = Builder::new().ip_subnet(Ipv4Subnet::default()).build();
-//     sim.client("client", async move {
-//         let _sock = bind_to_v6(0).await?;
-//         Ok(())
-//     });
-//     sim.run().unwrap()
-// }
+#[test]
+fn ipv6_connectivity() {
+    let mut sim = Builder::new().build();
+    sim.client("client", async move {
+        let v6_addr = lookup("server")
+            .into_iter()
+            .find(IpAddr::is_ipv6)
+            .expect("An Ipv6 address should be available");
+        let mut sock = TcpStream::connect((v6_addr, 80)).await?;
+        sock.write_all(b"Hello World").await?;
 
-// #[test]
-// fn ipv6_connectivity() -> Result {
-//     let mut sim = Builder::new().ip_subnet(Ipv6Subnet::default()).build();
-//     sim.client("server", async move {
-//         let list = TcpListener::bind(("::", 80)).await.unwrap();
-//         let _stream = list.accept().await.unwrap();
-//         Ok(())
-//     });
-//     sim.client("client", async move {
-//         let stream = TcpStream::connect("server:80").await.unwrap();
-//         let _ = stream;
-//         Ok(())
-//     });
+        let mut buf = [0; 100];
+        let n = sock.read(&mut buf).await?;
+        assert_eq!(&buf[..n], b"Hello World");
 
-//     sim.run()
-// }
+        Ok(())
+    });
+    sim.client("server", async move {
+        let lis = TcpListener::bind(":::80").await?;
+        let (mut sock, _) = lis.accept().await?;
+        let mut buf = [0; 100];
+        let n = sock.read(&mut buf).await?;
+        sock.write_all(&buf[..n]).await?;
+        Ok(())
+    });
+}
+
+#[test]
+fn denies_ip_version_missmatch() {}
 
 #[test]
 fn bind_addr_in_use() -> Result {
@@ -769,12 +766,8 @@ fn bind_addr_in_use() -> Result {
     sim.run()
 }
 
-fn run_localhost_test(
-    ip_version: IpSubnet,
-    bind_addr: SocketAddr,
-    connect_addr: SocketAddr,
-) -> Result {
-    let mut sim = Builder::new().ip_subnet(ip_version).build();
+fn run_localhost_test(subnet: IpSubnet, bind_addr: SocketAddr, connect_addr: SocketAddr) -> Result {
+    let mut sim = Builder::new().ip_subnet(subnet).build();
     let expected = [0, 1, 7, 3, 8];
     sim.client("client", async move {
         let listener = TcpListener::bind(bind_addr).await?;
@@ -801,33 +794,33 @@ fn run_localhost_test(
     sim.run()
 }
 
-// #[test]
-// fn loopback_to_wildcard_v4() -> Result {
-//     let bind_addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 1234);
-//     let connect_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 1234));
-//     run_localhost_test(Ipv4Subnet::default().into(), bind_addr, connect_addr)
-// }
+#[test]
+fn loopback_to_wildcard_v4() -> Result {
+    let bind_addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 1234);
+    let connect_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 1234));
+    run_localhost_test(IpSubnet::default(), bind_addr, connect_addr)
+}
 
-// #[test]
-// fn loopback_to_localhost_v4() -> Result {
-//     let bind_addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 1234);
-//     let connect_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 1234));
-//     run_localhost_test(Ipv4Subnet::default().into(), bind_addr, connect_addr)
-// }
+#[test]
+fn loopback_to_localhost_v4() -> Result {
+    let bind_addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 1234);
+    let connect_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 1234));
+    run_localhost_test(IpSubnet::default(), bind_addr, connect_addr)
+}
 
-// #[test]
-// fn loopback_to_wildcard_v6() -> Result {
-//     let bind_addr = SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), 1234);
-//     let connect_addr = SocketAddr::from((Ipv6Addr::LOCALHOST, 1234));
-//     run_localhost_test(Ipv6Subnet::default().into(), bind_addr, connect_addr)
-// }
+#[test]
+fn loopback_to_wildcard_v6() -> Result {
+    let bind_addr = SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), 1234);
+    let connect_addr = SocketAddr::from((Ipv6Addr::LOCALHOST, 1234));
+    run_localhost_test(IpSubnet::default(), bind_addr, connect_addr)
+}
 
-// #[test]
-// fn loopback_to_localhost_v6() -> Result {
-//     let bind_addr = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), 1234);
-//     let connect_addr = SocketAddr::from((Ipv6Addr::LOCALHOST, 1234));
-//     run_localhost_test(Ipv6Subnet::default().into(), bind_addr, connect_addr)
-// }
+#[test]
+fn loopback_to_localhost_v6() -> Result {
+    let bind_addr = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), 1234);
+    let connect_addr = SocketAddr::from((Ipv6Addr::LOCALHOST, 1234));
+    run_localhost_test(IpSubnet::default(), bind_addr, connect_addr)
+}
 
 #[test]
 fn remote_to_localhost_refused() -> Result {

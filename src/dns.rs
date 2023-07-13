@@ -21,7 +21,7 @@ pub trait ToIpAddrs: sealed::Sealed {
     fn to_ip_addrs(&self, dns: &Dns) -> Vec<IpAddr>;
 
     #[doc(hidden)]
-    fn register_domain_name(&self, _dns: &mut Dns, _addrs: HostAddrPair) {}
+    fn register(&self, dns: &mut Dns) -> HostAddrPair;
 }
 
 /// A simulated version of `tokio::net::ToSocketAddrs`.
@@ -39,26 +39,7 @@ impl Dns {
     }
 
     pub(crate) fn register(&mut self, addr: impl ToIpAddrs) -> HostAddrPair {
-        let addrs = self.lookup(&addr);
-        let mut v4 = Ipv4Addr::UNSPECIFIED;
-        let mut v6 = Ipv6Addr::UNSPECIFIED;
-        for addr in addrs {
-            match addr {
-                IpAddr::V4(addr) => v4 = addr,
-                IpAddr::V6(addr) => v6 = addr,
-            }
-        }
-
-        if v4.is_unspecified() {
-            v4 = self.addrs.next_v4();
-        }
-        if v6.is_unspecified() {
-            v6 = self.addrs.next_v6()
-        }
-
-        let host = HostAddrPair { ipv4: v4, ipv6: v6 };
-        addr.register_domain_name(self, host);
-        host
+        addr.register(self)
     }
 
     pub(crate) fn lookup(&self, addr: impl ToIpAddrs) -> Vec<IpAddr> {
@@ -66,22 +47,20 @@ impl Dns {
     }
 
     pub(crate) fn reverse(&self, addr: IpAddr) -> Option<&str> {
-        todo!()
-    }
-}
-
-impl<'a, T> ToIpAddrs for &'a T
-where
-    T: ToIpAddrs,
-{
-    fn to_ip_addrs(&self, dns: &Dns) -> Vec<IpAddr> {
-        (*self).to_ip_addrs(dns)
+        self.names
+            .iter()
+            .find(|(_, v)| v.ipv4 == addr || v.ipv6 == addr)
+            .map(|v| v.0.as_str())
     }
 }
 
 impl ToIpAddrs for String {
     fn to_ip_addrs(&self, dns: &Dns) -> Vec<IpAddr> {
         (&self[..]).to_ip_addrs(dns)
+    }
+
+    fn register(&self, dns: &mut Dns) -> HostAddrPair {
+        (&self[..]).register(dns)
     }
 }
 
@@ -97,8 +76,23 @@ impl<'a> ToIpAddrs for &'a str {
             .unwrap_or(Vec::new())
     }
 
-    fn register_domain_name(&self, dns: &mut Dns, addrs: HostAddrPair) {
-        *dns.names.entry(self.to_string()).or_insert(addrs) = addrs;
+    fn register(&self, dns: &mut Dns) -> HostAddrPair {
+        if let Ok(ipaddr) = self.parse::<IpAddr>() {
+            return ipaddr.register(dns);
+        }
+
+        // Register new node with unique domain name
+        assert!(
+            !dns.names.contains_key(*self),
+            "Cannot register multiple nodes under the same name"
+        );
+
+        let addrs = HostAddrPair {
+            ipv4: dns.addrs.next_v4(),
+            ipv6: dns.addrs.next_v6(),
+        };
+        dns.names.insert(self.to_string(), addrs);
+        addrs
     }
 }
 
@@ -106,17 +100,46 @@ impl ToIpAddrs for IpAddr {
     fn to_ip_addrs(&self, _: &Dns) -> Vec<IpAddr> {
         vec![*self]
     }
+
+    fn register(&self, dns: &mut Dns) -> HostAddrPair {
+        match self {
+            IpAddr::V4(addr) => addr.register(dns),
+            IpAddr::V6(addr) => addr.register(dns),
+        }
+    }
 }
 
 impl ToIpAddrs for Ipv4Addr {
     fn to_ip_addrs(&self, _: &Dns) -> Vec<IpAddr> {
         vec![IpAddr::V4(*self)]
     }
+
+    fn register(&self, dns: &mut Dns) -> HostAddrPair {
+        assert!(
+            dns.addrs.subnet_v4().contains(*self),
+            "Cannot register node with address {} inside a {} subnet",
+            *self,
+            dns.addrs.subnet_v4()
+        );
+        let ipv6 = dns.addrs.next_v6();
+        HostAddrPair { ipv4: *self, ipv6 }
+    }
 }
 
 impl ToIpAddrs for Ipv6Addr {
     fn to_ip_addrs(&self, _: &Dns) -> Vec<IpAddr> {
         vec![IpAddr::V6(*self)]
+    }
+
+    fn register(&self, dns: &mut Dns) -> HostAddrPair {
+        assert!(
+            dns.addrs.subnet_v6().contains(*self),
+            "Cannot register node with address {} inside a {} subnet",
+            *self,
+            dns.addrs.subnet_v6()
+        );
+        let ipv4 = dns.addrs.next_v4();
+        HostAddrPair { ipv4, ipv6: *self }
     }
 }
 

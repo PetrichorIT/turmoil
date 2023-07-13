@@ -221,7 +221,6 @@ impl Topology {
         dst: SocketAddr,
         message: Protocol,
     ) {
-        dbg!(src, dst);
         let link = &mut self.links[&Pair::new(src.ip(), dst.ip())];
         link.enqueue_message(&self.config, rand, src, dst, message);
     }

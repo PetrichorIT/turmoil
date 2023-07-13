@@ -416,9 +416,16 @@ impl Tcp {
 }
 
 /// Returns whether the given bind addr can accept a packet routed to the given dst
+///
+/// Returns `true` if:
+/// - the addresses match
+/// - the binding is to `UNSPECIFIED` and ports, as well as IP versions match
+///
+/// Note that `tokio::net` supports incoming Ipv4 packets on sockets bound to `::`
+/// mapping their `Ipv4Addr` to `ffff::<ipv4>`. This is not yet supported.
 pub fn matches(bind: SocketAddr, dst: SocketAddr) -> bool {
     if bind.ip().is_unspecified() && bind.port() == dst.port() {
-        return true;
+        return bind.is_ipv4() == dst.is_ipv4();
     }
 
     bind == dst

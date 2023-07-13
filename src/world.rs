@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::envelope::Protocol;
 use crate::ip::HostAddrPair;
-use crate::{config, Dns, Host, IpSubnet, ToIpAddrs, Topology};
+use crate::{config, Dns, Host, IpSubnet, ToIpAddrs, Topology, TRACING_TARGET};
 
 use indexmap::IndexMap;
 use rand::RngCore;
@@ -12,8 +12,6 @@ use std::time::Duration;
 
 /// Tracks all the state for the simulated world.
 pub(crate) struct World {
-    pub(crate) ip_to_host_mapping: IndexMap<IpAddr, HostAddrPair>,
-
     /// Tracks all individual hosts
     pub(crate) hosts: IndexMap<HostAddrPair, Host>,
 
@@ -37,7 +35,6 @@ impl World {
     /// Initialize a new world.
     pub(crate) fn new(link: config::Link, rng: Box<dyn RngCore>, subnets: IpSubnet) -> World {
         World {
-            ip_to_host_mapping: IndexMap::new(),
             hosts: IndexMap::new(),
             topology: Topology::new(link),
             dns: Dns::new(subnets.iter()),
@@ -95,33 +92,24 @@ impl World {
 
     /// Register a new host with the simulation.
     pub(crate) fn register(&mut self, addr: impl ToIpAddrs, config: &Config) -> HostAddrPair {
-        // assert!(
-        //     !self.hosts.contains_key(&addr),
-        //     "already registered host for the given ip address"
-        // );
-        // assert!(
-        //     self.subnet.contains(addr),
-        //     "node address is not contained within the available subnet"
-        // );
+        let addrs = self.dns.register(addr);
 
-        let host = self.dns.register(addr);
-
-        // tracing::info!(target: TRACING_TARGET, hostname = ?self.dns.reverse(addr), ?addr, "New");
+        tracing::info!(target: TRACING_TARGET, hostname = ?self.dns.reverse(addrs.ipv4.into()), %addrs, "New");
 
         // Register links between the new host and all existing hosts
         for existing in self.hosts.keys() {
             self.topology
-                .register(existing.ipv4.into(), host.ipv4.into());
+                .register(existing.ipv4.into(), addrs.ipv4.into());
             self.topology
-                .register(existing.ipv6.into(), host.ipv6.into());
+                .register(existing.ipv6.into(), addrs.ipv6.into());
         }
 
         // Initialize host state
         self.hosts.insert(
-            host,
-            Host::new(host, config.tcp_capacity, config.udp_capacity),
+            addrs,
+            Host::new(addrs, config.tcp_capacity, config.udp_capacity),
         );
-        host
+        addrs
     }
 
     /// Send `message` from `src` to `dst`. Delivery is asynchronous and not

@@ -1,4 +1,7 @@
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::{
+    fmt::Display,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct HostAddrPair {
@@ -12,6 +15,12 @@ impl HostAddrPair {
     }
 }
 
+impl Display for HostAddrPair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}, {}]", self.ipv4, self.ipv6)
+    }
+}
+
 /// A subnet defining the available addresses in the
 /// underlying network.
 ///
@@ -19,8 +28,8 @@ impl HostAddrPair {
 /// in the range `192.168.0.0/16`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct IpSubnet {
-    v4: Ipv4Subnet,
-    v6: Ipv6Subnet,
+    pub v4: Ipv4Subnet,
+    pub v6: Ipv6Subnet,
 }
 
 impl IpSubnet {
@@ -32,13 +41,6 @@ impl IpSubnet {
             v6_state: 1,
         }
     }
-
-    pub(crate) fn contains(&self, addr: IpAddr) -> bool {
-        match addr {
-            IpAddr::V4(addr) => self.v4.contains(addr),
-            IpAddr::V6(addr) => self.v6.contains(addr),
-        }
-    }
 }
 
 /// An Ipv4 subnet, defining a range of availale Ipv4 addresses.
@@ -46,13 +48,6 @@ impl IpSubnet {
 pub struct Ipv4Subnet {
     prefix: Ipv4Addr,
     mask: Ipv4Addr,
-}
-
-/// An Ipv6 subnet, defining a range of availale Ipv6 addresses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Ipv6Subnet {
-    prefix: Ipv6Addr,
-    mask: Ipv6Addr,
 }
 
 impl Ipv4Subnet {
@@ -79,6 +74,25 @@ impl Ipv4Subnet {
     }
 }
 
+impl Display for Ipv4Subnet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.prefix, u32::from(self.mask).leading_ones())
+    }
+}
+
+impl Default for Ipv4Subnet {
+    fn default() -> Self {
+        Ipv4Subnet::new(Ipv4Addr::new(192, 168, 0, 0), 16)
+    }
+}
+
+/// An Ipv6 subnet, defining a range of availale Ipv6 addresses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Ipv6Subnet {
+    prefix: Ipv6Addr,
+    mask: Ipv6Addr,
+}
+
 impl Ipv6Subnet {
     /// A new instance of `Ipv6Network`.
     ///
@@ -103,9 +117,14 @@ impl Ipv6Subnet {
     }
 }
 
-impl Default for Ipv4Subnet {
-    fn default() -> Self {
-        Ipv4Subnet::new(Ipv4Addr::new(192, 168, 0, 0), 16)
+impl Display for Ipv6Subnet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}/{}",
+            self.prefix,
+            u128::from(self.mask).leading_ones()
+        )
     }
 }
 
@@ -126,8 +145,12 @@ pub(crate) struct IpSubnetIter {
 }
 
 impl IpSubnetIter {
-    pub(crate) fn next(&mut self) -> (Ipv4Addr, Ipv6Addr) {
-        (self.next_v4(), self.next_v6())
+    pub(crate) fn subnet_v4(&self) -> &Ipv4Subnet {
+        &self.v4_subnet
+    }
+
+    pub(crate) fn subnet_v6(&self) -> &Ipv6Subnet {
+        &self.v6_subnet
     }
 
     pub(crate) fn next_v4(&mut self) -> Ipv4Addr {
