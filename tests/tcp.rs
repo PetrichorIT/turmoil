@@ -14,7 +14,7 @@ use tokio::{
 use turmoil::{
     lookup,
     net::{TcpListener, TcpStream},
-    Builder, IpSubnet, Ipv4Subnet, Ipv6Subnet, Result,
+    Builder, IpSubnets, Result,
 };
 
 const PORT: u16 = 1738;
@@ -25,10 +25,6 @@ fn assert_error_kind<T>(res: io::Result<T>, kind: io::ErrorKind) {
 
 async fn bind_to_v4(port: u16) -> std::result::Result<TcpListener, std::io::Error> {
     TcpListener::bind((IpAddr::from(Ipv4Addr::UNSPECIFIED), port)).await
-}
-
-async fn bind_to_v6(port: u16) -> std::result::Result<TcpListener, std::io::Error> {
-    TcpListener::bind((IpAddr::from(Ipv6Addr::UNSPECIFIED), port)).await
 }
 
 async fn bind() -> std::result::Result<TcpListener, std::io::Error> {
@@ -766,8 +762,12 @@ fn bind_addr_in_use() -> Result {
     sim.run()
 }
 
-fn run_localhost_test(subnet: IpSubnet, bind_addr: SocketAddr, connect_addr: SocketAddr) -> Result {
-    let mut sim = Builder::new().ip_subnet(subnet).build();
+fn run_localhost_test(
+    subnet: IpSubnets,
+    bind_addr: SocketAddr,
+    connect_addr: SocketAddr,
+) -> Result {
+    let mut sim = Builder::new().ip_subnets(subnet).build();
     let expected = [0, 1, 7, 3, 8];
     sim.client("client", async move {
         let listener = TcpListener::bind(bind_addr).await?;
@@ -798,28 +798,28 @@ fn run_localhost_test(subnet: IpSubnet, bind_addr: SocketAddr, connect_addr: Soc
 fn loopback_to_wildcard_v4() -> Result {
     let bind_addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 1234);
     let connect_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 1234));
-    run_localhost_test(IpSubnet::default(), bind_addr, connect_addr)
+    run_localhost_test(IpSubnets::default(), bind_addr, connect_addr)
 }
 
 #[test]
 fn loopback_to_localhost_v4() -> Result {
     let bind_addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 1234);
     let connect_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 1234));
-    run_localhost_test(IpSubnet::default(), bind_addr, connect_addr)
+    run_localhost_test(IpSubnets::default(), bind_addr, connect_addr)
 }
 
 #[test]
 fn loopback_to_wildcard_v6() -> Result {
     let bind_addr = SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), 1234);
     let connect_addr = SocketAddr::from((Ipv6Addr::LOCALHOST, 1234));
-    run_localhost_test(IpSubnet::default(), bind_addr, connect_addr)
+    run_localhost_test(IpSubnets::default(), bind_addr, connect_addr)
 }
 
 #[test]
 fn loopback_to_localhost_v6() -> Result {
     let bind_addr = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), 1234);
     let connect_addr = SocketAddr::from((Ipv6Addr::LOCALHOST, 1234));
-    run_localhost_test(IpSubnet::default(), bind_addr, connect_addr)
+    run_localhost_test(IpSubnets::default(), bind_addr, connect_addr)
 }
 
 #[test]

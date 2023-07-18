@@ -391,19 +391,9 @@ impl Link {
     ) {
         let mut deliverable = Vec::new();
 
-        deliverable.extend(
-            self.deliverable
-                .entry(host.addrs.ipv4.into())
-                .or_default()
-                .drain(..),
-        );
-
-        deliverable.extend(
-            self.deliverable
-                .entry(host.addrs.ipv6.into())
-                .or_default()
-                .drain(..),
-        );
+        for &addr in host.addrs.iter() {
+            deliverable.extend(self.deliverable.entry(addr).or_default().drain(..));
+        }
 
         for message in deliverable {
             let (src, dst) = (message.src, message.dst);

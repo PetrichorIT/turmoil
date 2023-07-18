@@ -281,23 +281,19 @@ impl UdpSocket {
         let msg = Protocol::Udp(packet);
 
         let mut src = self.local_addr;
-        if dst.ip().is_loopback() {
-            src.set_ip(dst.ip());
-        }
-        if src.ip().is_unspecified() {
-            let host_ip = if self.local_addr.is_ipv4() {
-                world.current_host_mut().addrs.ipv4.into()
-            } else {
-                world.current_host_mut().addrs.ipv6.into()
-            };
-            src.set_ip(host_ip);
-        }
-
         if src.is_ipv4() != dst.is_ipv4() {
             return Err(Error::new(
                 ErrorKind::InvalidInput,
                 "invalid argument - src and dst socket use different ip versions",
             ));
+        }
+
+        if dst.ip().is_loopback() {
+            src.set_ip(dst.ip());
+        }
+        if src.ip().is_unspecified() {
+            let src_ip = world.current_host_mut().src_addr_for(dst.ip());
+            src.set_ip(src_ip);
         }
 
         if dst.ip().is_loopback() {

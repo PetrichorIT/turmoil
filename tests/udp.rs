@@ -14,7 +14,7 @@ use tokio::{
 use turmoil::{
     lookup,
     net::{self, UdpSocket},
-    Builder, IpSubnet, Result,
+    Builder, IpSubnets, Result,
 };
 
 const PORT: u16 = 1738;
@@ -483,11 +483,11 @@ fn bind_addr_in_use() -> Result {
 }
 
 fn run_localhost_test(
-    ip_subnet: IpSubnet,
+    ip_subnet: IpSubnets,
     bind_addr: SocketAddr,
     connect_addr: SocketAddr,
 ) -> Result {
-    let mut sim = Builder::new().ip_subnet(ip_subnet).build();
+    let mut sim = Builder::new().ip_subnets(ip_subnet).build();
     let expected = [0, 1, 7, 3, 8];
     sim.client("client", async move {
         let socket = UdpSocket::bind(bind_addr).await?;
@@ -521,28 +521,28 @@ fn run_localhost_test(
 fn loopback_to_wildcard_v4() -> Result {
     let bind_addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 1234);
     let connect_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 1234));
-    run_localhost_test(IpSubnet::default(), bind_addr, connect_addr)
+    run_localhost_test(IpSubnets::default(), bind_addr, connect_addr)
 }
 
 #[test]
 fn loopback_to_localhost_v4() -> Result {
     let bind_addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 1234);
     let connect_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 1234));
-    run_localhost_test(IpSubnet::default(), bind_addr, connect_addr)
+    run_localhost_test(IpSubnets::default(), bind_addr, connect_addr)
 }
 
 #[test]
 fn loopback_to_wildcard_v6() -> Result {
     let bind_addr = SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), 1234);
     let connect_addr = SocketAddr::from((Ipv6Addr::LOCALHOST, 1234));
-    run_localhost_test(IpSubnet::default(), bind_addr, connect_addr)
+    run_localhost_test(IpSubnets::default(), bind_addr, connect_addr)
 }
 
 #[test]
 fn loopback_to_localhost_v6() -> Result {
     let bind_addr = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), 1234);
     let connect_addr = SocketAddr::from((Ipv6Addr::LOCALHOST, 1234));
-    run_localhost_test(IpSubnet::default(), bind_addr, connect_addr)
+    run_localhost_test(IpSubnets::default(), bind_addr, connect_addr)
 }
 
 #[test]

@@ -65,11 +65,7 @@ impl TcpStream {
             let dst = addr.to_socket_addr(&world.dns);
             let host = world.current_host_mut();
 
-            let host_addr = if dst.is_ipv4() {
-                host.addrs.ipv4.into()
-            } else {
-                host.addrs.ipv6.into()
-            };
+            let host_addr = host.src_addr_for(dst.ip());
             let mut local_addr = SocketAddr::new(host_addr, host.assign_ephemeral_port());
 
             if dst.ip().is_loopback() {

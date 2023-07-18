@@ -74,11 +74,8 @@ impl TcpListener {
                     my_addr.set_ip(origin.ip());
                 }
                 if my_addr.ip().is_unspecified() {
-                    my_addr.set_ip(if self.local_addr.is_ipv4() {
-                        host.addrs.ipv4.into()
-                    } else {
-                        host.addrs.ipv6.into()
-                    });
+                    let src_ip = host.src_addr_for(origin.ip());
+                    my_addr.set_ip(src_ip);
                 }
 
                 let pair = SocketPair::new(my_addr, origin);

@@ -1,4 +1,4 @@
-use crate::{ip::IpSubnet, *};
+use crate::{ip::IpSubnets, *};
 
 use rand::{RngCore, SeedableRng};
 use std::time::{Duration, SystemTime};
@@ -9,7 +9,7 @@ pub struct Builder {
 
     config: Config,
 
-    subnet: IpSubnet,
+    subnets: IpSubnets,
 
     link: config::Link,
 }
@@ -25,7 +25,7 @@ impl Builder {
         Self {
             rng: None,
             config: Config::default(),
-            subnet: IpSubnet::default(),
+            subnets: IpSubnets::default(),
             link: config::Link {
                 latency: Some(config::Latency::default()),
                 message_loss: Some(config::MessageLoss::default()),
@@ -52,8 +52,8 @@ impl Builder {
     }
 
     /// Which kind of network should be simulated.
-    pub fn ip_subnet(&mut self, value: impl Into<IpSubnet>) -> &mut Self {
-        self.subnet = value.into();
+    pub fn ip_subnets(&mut self, value: impl Into<IpSubnets>) -> &mut Self {
+        self.subnets = value.into();
         self
     }
 
@@ -106,7 +106,7 @@ impl Builder {
     }
 
     pub fn build_with_rng<'a>(&self, rng: Box<dyn RngCore>) -> Sim<'a> {
-        let world = World::new(self.link.clone(), rng, self.subnet);
+        let world = World::new(self.link.clone(), rng, self.subnets.clone());
         Sim::new(self.config.clone(), world)
     }
 }

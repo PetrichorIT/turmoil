@@ -1,8 +1,8 @@
 use crate::config::Config;
 use crate::envelope::Protocol;
 use crate::host::HostIdentifier;
-use crate::ip::HostAddrPair;
-use crate::{config, Dns, Host, IpSubnet, ToIpAddrs, Topology, TRACING_TARGET};
+use crate::ip::IpSubnets;
+use crate::{config, Dns, Host, ToIpAddrs, Topology, TRACING_TARGET};
 
 use indexmap::IndexMap;
 use rand::RngCore;
@@ -34,11 +34,11 @@ scoped_thread_local!(static CURRENT: RefCell<World>);
 
 impl World {
     /// Initialize a new world.
-    pub(crate) fn new(link: config::Link, rng: Box<dyn RngCore>, subnets: IpSubnet) -> World {
+    pub(crate) fn new(link: config::Link, rng: Box<dyn RngCore>, subnets: IpSubnets) -> World {
         World {
             hosts: IndexMap::new(),
             topology: Topology::new(link),
-            dns: Dns::new(subnets.iter()),
+            dns: Dns::new(subnets.addrs_iter()),
             current: None,
             rng,
         }
@@ -92,22 +92,16 @@ impl World {
     }
 
     /// Register a new host with the simulation.
-    pub(crate) fn register(
-        &mut self,
-        id: HostIdentifier,
-        addr: impl ToIpAddrs,
-        config: &Config,
-    ) -> HostAddrPair {
+    pub(crate) fn register(&mut self, id: HostIdentifier, addr: impl ToIpAddrs, config: &Config) {
         let addrs = self.dns.register(addr);
 
-        tracing::info!(target: TRACING_TARGET, hostname = ?self.dns.reverse(addrs.ipv4.into()), %addrs, "New");
+        tracing::info!(target: TRACING_TARGET, hostname = ?self.dns.reverse(addrs[0]), %addrs, "New");
 
         // Register links between the new host and all existing hosts
         for existing in self.hosts.values() {
-            self.topology
-                .register(existing.addrs.ipv4.into(), addrs.ipv4.into());
-            self.topology
-                .register(existing.addrs.ipv6.into(), addrs.ipv6.into());
+            for (&lhs, &rhs) in existing.addrs.iter().zip(addrs.iter()) {
+                self.topology.register(lhs, rhs)
+            }
         }
 
         // Initialize host state
@@ -115,7 +109,6 @@ impl World {
             id,
             Host::new(addrs, config.tcp_capacity, config.udp_capacity),
         );
-        addrs
     }
 
     /// Send `message` from `src` to `dst`. Delivery is asynchronous and not

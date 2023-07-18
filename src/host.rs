@@ -1,5 +1,5 @@
 use crate::envelope::{hex, Datagram, Protocol, Segment, Syn};
-use crate::ip::HostAddrPair;
+use crate::ip::HostAddrs;
 use crate::net::{SocketPair, TcpListener, UdpSocket};
 use crate::world::World;
 use crate::{Envelope, TRACING_TARGET};
@@ -23,7 +23,7 @@ pub type HostIdentifier = usize;
 /// Both modes may be used simultaneously.
 pub(crate) struct Host {
     /// Host ip address.
-    pub(crate) addrs: HostAddrPair,
+    pub(crate) addrs: HostAddrs,
 
     /// L4 User Datagram Protocol (UDP).
     pub(crate) udp: Udp,
@@ -43,7 +43,7 @@ pub(crate) struct Host {
 }
 
 impl Host {
-    pub(crate) fn new(addrs: HostAddrPair, tcp_capacity: usize, udp_capacity: usize) -> Host {
+    pub(crate) fn new(addrs: HostAddrs, tcp_capacity: usize, udp_capacity: usize) -> Host {
         Host {
             addrs,
             udp: Udp::new(udp_capacity),
@@ -55,7 +55,11 @@ impl Host {
     }
 
     pub fn is_dst_for(&self, ip: IpAddr) -> bool {
-        ip == self.addrs.ipv4 || ip == self.addrs.ipv6
+        self.addrs.contains(ip)
+    }
+
+    pub fn src_addr_for(&self, dst: IpAddr) -> IpAddr {
+        self.addrs.src_addr_for(dst)
     }
 
     /// Set a new `Instant` for each iteration of the simulation. `elapsed` is
@@ -435,23 +439,17 @@ pub fn matches(bind: SocketAddr, dst: SocketAddr) -> bool {
 
 #[cfg(test)]
 mod test {
-    use std::net::{Ipv4Addr, Ipv6Addr};
-
-    use crate::{ip::HostAddrPair, Host, Result};
+    use crate::{ip::IpSubnets, Host, Result};
 
     #[test]
     fn recycle_ports() -> Result {
-        let mut host = Host::new(
-            HostAddrPair {
-                ipv4: Ipv4Addr::new(192, 168, 2, 1),
-                ipv6: Ipv6Addr::UNSPECIFIED,
-            },
-            1,
-            1,
-        );
+        let subnet = IpSubnets::default();
+        let addrs = subnet.addrs_iter().next();
 
-        host.udp.bind((host.addrs.ipv4, 65534).into())?;
-        host.udp.bind((host.addrs.ipv4, 65535).into())?;
+        let mut host = Host::new(addrs, 1, 1);
+
+        host.udp.bind((host.addrs[0], 65534).into())?;
+        host.udp.bind((host.addrs[0], 65535).into())?;
 
         for _ in 49152..65534 {
             host.assign_ephemeral_port();
